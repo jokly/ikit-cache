@@ -8,7 +8,7 @@ LDFLAGS = -w -s
 GO_ENV = env GOPROXY=$(GOPROXY) GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED)
 GO_BUILD ?= $(GO_ENV) $(GO) build -ldflags "$(LDFLAGS)"
 GO_RUN ?= $(GO_ENV) $(GO) run
-GO_TEST ?= $(GO_ENV) $(GO) test -count=1 -failfast
+GO_TEST ?= $(GO_ENV) $(GO) test 
 
 all: cache consumer
 
@@ -23,6 +23,9 @@ run_cache:
 
 run_consumer:
 	$(GO_RUN) cmd/consumer/*.go
+
+test:
+	$(GO_TEST) ./internal/**
 
 clean:
 	@rm cache || true
