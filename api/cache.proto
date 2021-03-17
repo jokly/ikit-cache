@@ -1,7 +1,7 @@
 syntax = "proto3";
 package cache;
 
-option go_package = "internal/proto";
+option go_package = "internal/transport/proto";
 
 service RandomService {
     rpc GetRandomDataStream(GetRandomDataStreamRequest) returns (stream GetRandomDataStreamResponse);
@@ -9,4 +9,6 @@ service RandomService {
 
 message GetRandomDataStreamRequest {}
 
-message GetRandomDataStreamResponse {}
+message GetRandomDataStreamResponse {
+    string result = 1;
+}
