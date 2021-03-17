@@ -9,6 +9,7 @@ GO_ENV = env GOPROXY=$(GOPROXY) GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_
 GO_BUILD ?= $(GO_ENV) $(GO) build -ldflags "$(LDFLAGS)"
 GO_RUN ?= $(GO_ENV) $(GO) run
 GO_TEST ?= $(GO_ENV) $(GO) test 
+PROTOC ?= protoc
 
 all: cache consumer
 
@@ -26,6 +27,9 @@ run_consumer:
 
 test:
 	$(GO_TEST) ./internal/**
+
+proto:
+	protoc -I=./api --go_out=. --go-grpc_out=. ./api/cache.proto
 
 clean:
 	@rm cache || true
