@@ -1,28 +1,36 @@
 package transport
 
 import (
+	"ikit-cache/internal/service"
 	"ikit-cache/internal/transport/proto"
 
 	"google.golang.org/grpc"
 )
 
 type server struct {
+	cacheSvc *service.CacheService
 	proto.UnimplementedRandomServiceServer
 }
 
 func (s *server) GetRandomDataStream(req *proto.GetRandomDataStreamRequest, stream proto.RandomService_GetRandomDataStreamServer) error {
-	resp := &proto.GetRandomDataStreamResponse{
-		Result: "Hello World",
-	}
+	for resultString := range s.cacheSvc.GetRandomDataStream() {
+		resp := &proto.GetRandomDataStreamResponse{
+			Result: resultString,
+		}
 
-	_ = stream.Send(resp)
+		if err := stream.Send(resp); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
 
-func InitGRPCServer() *grpc.Server {
+func InitGRPCServer(cacheSvc *service.CacheService) *grpc.Server {
 	grpcServer := grpc.NewServer()
-	s := &server{}
+	s := &server{
+		cacheSvc: cacheSvc,
+	}
 
 	proto.RegisterRandomServiceServer(grpcServer, s)
 
