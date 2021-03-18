@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"ikit-cache/internal/transport/proto"
+	"io"
 	"log"
+	"sync"
 
 	"google.golang.org/grpc"
 )
 
 const (
-	address = "localhost:50051"
+	address      = "localhost:50051"
+	numConsumers = 10
 )
 
 func main() {
@@ -20,25 +23,39 @@ func main() {
 	defer conn.Close()
 
 	client := proto.NewRandomServiceClient(conn)
+	wg := &sync.WaitGroup{}
 
-	request(client)
+	wg.Add(numConsumers)
+	for i := 0; i < numConsumers; i++ {
+		go request(wg, client)
+	}
+
+	wg.Wait()
 }
 
-func request(c proto.RandomServiceClient) {
-	ctx := context.Background()
-	req := &proto.GetRandomDataStreamRequest{}
+func request(wg *sync.WaitGroup, client proto.RandomServiceClient) {
+	defer wg.Done()
 
-	stream, err := c.GetRandomDataStream(ctx, req)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stream, err := client.GetRandomDataStream(ctx, &proto.GetRandomDataStreamRequest{})
+
 	if err != nil {
 		log.Printf("couldn't get stream: %v\n", err)
 		return
 	}
 
-	resp, err := stream.Recv()
-	if err != nil {
-		log.Printf("couldn't get response: %v\n", err)
-		return
-	}
+	for {
+		resp, err := stream.Recv()
 
-	log.Println(resp.Result)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			log.Printf("couldn't get response: %v\n", err)
+			break
+		}
+
+		log.Println(resp.Result)
+	}
 }
