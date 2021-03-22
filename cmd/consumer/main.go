@@ -46,8 +46,9 @@ func request(wg *sync.WaitGroup, client proto.RandomServiceClient) {
 		return
 	}
 
+	i := 0
 	for {
-		resp, err := stream.Recv()
+		_, err := stream.Recv()
 
 		if err == io.EOF {
 			break
@@ -56,6 +57,7 @@ func request(wg *sync.WaitGroup, client proto.RandomServiceClient) {
 			break
 		}
 
-		log.Println(resp.Result)
+		log.Println(i)
+		i += 1
 	}
 }
