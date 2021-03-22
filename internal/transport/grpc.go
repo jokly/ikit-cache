@@ -8,12 +8,12 @@ import (
 )
 
 type server struct {
-	cacheSvc *service.CacheService
+	requestSvc *service.RequestService
 	proto.UnimplementedRandomServiceServer
 }
 
 func (s *server) GetRandomDataStream(req *proto.GetRandomDataStreamRequest, stream proto.RandomService_GetRandomDataStreamServer) error {
-	for resultString := range s.cacheSvc.GetRandomDataStream() {
+	for resultString := range s.requestSvc.GetRandomDataStream() {
 		resp := &proto.GetRandomDataStreamResponse{
 			Result: resultString,
 		}
@@ -26,10 +26,10 @@ func (s *server) GetRandomDataStream(req *proto.GetRandomDataStreamRequest, stre
 	return nil
 }
 
-func InitGRPCServer(cacheSvc *service.CacheService) *grpc.Server {
+func InitGRPCServer(requestSvc *service.RequestService) *grpc.Server {
 	grpcServer := grpc.NewServer()
 	s := &server{
-		cacheSvc: cacheSvc,
+		requestSvc: requestSvc,
 	}
 
 	proto.RegisterRandomServiceServer(grpcServer, s)

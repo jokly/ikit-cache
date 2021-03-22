@@ -1,21 +1,11 @@
 package service
 
-import "fmt"
+type CacheService struct{}
 
-type CacheService struct {
+func (cs *CacheService) Set(key, values string) error {
+	return nil
 }
 
-func (cs *CacheService) GetRandomDataStream() <-chan string {
-	responses := make(chan string)
-
-	// TODO: Implement
-	go func() {
-		for i := 0; i < 5; i++ {
-			responses <- fmt.Sprintf("hello: %d", i)
-		}
-
-		close(responses)
-	}()
-
-	return responses
+func (cs *CacheService) Get(key string) string {
+	return key
 }
