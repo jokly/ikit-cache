@@ -9,6 +9,7 @@ import (
 )
 
 type Config struct {
+	RedisURL         string   `yaml:"RedisURL"`
 	URLs             []string `yaml:"URLs"`
 	MinTimeout       int      `yaml:"MinTimeout"`
 	MaxTimeout       int      `yaml:"MaxTimeout"`

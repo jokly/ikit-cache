@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"ikit-cache/internal/transport/proto"
 	"io"
 	"log"
@@ -10,13 +12,16 @@ import (
 	"google.golang.org/grpc"
 )
 
-const (
-	address      = "localhost:50051"
-	numConsumers = 10
-)
-
 func main() {
-	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
+	host := flag.String("h", "127.0.0.1", "server host")
+	port := flag.Int("p", 50051, "server port")
+	numConsumers := flag.Int("c", 10, "number of consumers")
+
+	flag.Parse()
+
+	log.Println("before connect")
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", *host, *port), grpc.WithInsecure(), grpc.WithBlock())
+	log.Println("after connect")
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
@@ -25,8 +30,8 @@ func main() {
 	client := proto.NewRandomServiceClient(conn)
 	wg := &sync.WaitGroup{}
 
-	wg.Add(numConsumers)
-	for i := 0; i < numConsumers; i++ {
+	wg.Add(*numConsumers)
+	for i := 0; i < *numConsumers; i++ {
 		go request(wg, client)
 	}
 

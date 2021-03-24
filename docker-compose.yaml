@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:6.2.1-alpine
+    
+  cache:
+    build: 
+      context: .
+      dockerfile: build/cache.Dockerfile
+    entrypoint: ["cache", "-c", "/config/config.yaml"]
+    ports:
+      - "50051:50051"
+    volumes:
+      - type: bind
+        source: ./config
+        target: /config
+    depends_on:
+      - redis
+
+  consumer:
+    build: 
+      context: .
+      dockerfile: build/consumer.Dockerfile
+    entrypoint: ["consumer", "-h", "cache", "-c", "10"]
+    depends_on:
+      - cache

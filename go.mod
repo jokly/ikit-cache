@@ -3,6 +3,7 @@ module ikit-cache
 go 1.16
 
 require (
+	github.com/go-redis/redis/v8 v8.7.1
 	github.com/golang/protobuf v1.4.2
 	github.com/stretchr/testify v1.7.0
 	google.golang.org/grpc v1.36.0

@@ -1,3 +1,4 @@
+RedisURL: redis://redis:6379
 URLs:
 - https://golang.org
 - https://www.google.com
