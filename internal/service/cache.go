@@ -10,18 +10,34 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+/* cache strategy (redlock)
+
+(x) get response from cache:
+	1. exists -> send response to channel
+	2. not exists -> set lock (set nx)
+		1. successfull -> http request -> send response to channel -> add cache -> unset lock
+		2. fail (lock exist) -> wait until unlock -> go to (x)
+*/
+
 type Response struct {
 	Body    string `json:"response"`
 	IsError bool   `json:"is_error"`
 }
 
 const (
-	inProgressKeySuffix = ":in_progress"
-	inProgressStatus    = 1
+	lockKeySuffix = ":lock"
 )
 
 var (
 	ctx = context.Background()
+
+	deleteScript = `
+		if redis.call("GET", KEYS[1]) == ARGV[1] then
+			return redis.call("DEL", KEYS[1])
+		else
+			return 0
+		end
+	`
 )
 
 type CacheService struct {
@@ -39,27 +55,32 @@ func MakeCacheService(redisURL string) *CacheService {
 	}
 }
 
-func (cs *CacheService) IsInProgress(url string) (bool, error) {
-	res, err := cs.rdb.Get(ctx, cs.getInProgressKey(url)).Int()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
+func (cs *CacheService) IsLock(url string) (bool, error) {
+	cmd := cs.rdb.Get(ctx, cs.getLockKey(url))
+	if cmd.Err() != nil {
+		if errors.Is(cmd.Err(), redis.Nil) {
 			return false, nil
 		}
 
-		return false, err
+		return false, cmd.Err()
 	}
 
-	return res == inProgressStatus, nil
+	return true, nil
 }
 
-func (cs *CacheService) SetInProgress(url string, expiration time.Duration) error {
-	cmd := cs.rdb.SetEX(ctx, cs.getInProgressKey(url), inProgressStatus, expiration)
+func (cs *CacheService) Lock(url, value string, expiration time.Duration) (bool, error) {
+	cmd := cs.rdb.SetNX(ctx, cs.getLockKey(url), value, expiration)
 
-	return cmd.Err()
+	return cmd.Val(), cmd.Err()
 }
 
-func (cs *CacheService) UnsetInProgress(url string) error {
-	cmd := cs.rdb.Del(ctx, cs.getInProgressKey(url))
+func (cs *CacheService) Unlock(url, value string) error {
+	cmd := cs.rdb.Eval(
+		ctx,
+		deleteScript,
+		[]string{cs.getLockKey(url)},
+		value,
+	)
 
 	return cmd.Err()
 }
@@ -90,6 +111,6 @@ func (cs *CacheService) SetResponse(url string, response Response, expiration ti
 	return cmd.Err()
 }
 
-func (cs *CacheService) getInProgressKey(url string) string {
-	return url + inProgressKeySuffix
+func (cs *CacheService) getLockKey(url string) string {
+	return url + lockKeySuffix
 }

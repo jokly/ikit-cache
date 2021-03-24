@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"errors"
 	"ikit-cache/internal/util"
 	"io"
@@ -60,65 +61,78 @@ func (rs *RequestService) makeAsyncRequests(responses chan<- string) {
 func (rs *RequestService) makeAsyncRequestWithCache(requestURL string, responses chan<- string, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	rs.waitInProgress(requestURL)
+	for {
+		// read response from cache
+		resp, err := rs.cacheSvc.GetResponse(requestURL)
+		if err != nil {
+			if !errors.Is(err, redis.Nil) {
+				log.Printf("couldn't get response from cache for %s: %v", requestURL, err)
+			}
+		} else {
+			log.Printf("get response from cache for %s", requestURL)
+			if !resp.IsError {
+				responses <- resp.Body
+			}
 
-	cachedResponse, err := rs.cacheSvc.GetResponse(requestURL)
-	if err != nil {
-		if !errors.Is(err, redis.Nil) {
-			log.Printf("couldn't get response from cache for %s: %v", requestURL, err)
+			return
 		}
-	} else {
-		log.Printf("got response from cache for %s", requestURL)
 
-		if !cachedResponse.IsError {
-			responses <- cachedResponse.Body
+		// try get lock
+		isTakeLock := false
+		lockValue, err := rs.getRandomLockValue()
+		if err != nil {
+			log.Println("couldn't generate random lock value")
+		} else {
+			isTakeLock, err = rs.cacheSvc.Lock(requestURL, lockValue, requestTimeout)
+			if err != nil {
+				log.Printf("couldn't take lock for %s: %v", requestURL, err)
+			}
 		}
 
-		return
+		// wait lock
+		if !isTakeLock {
+			log.Printf("wait lock for %s", requestURL)
+			isGetUnlock := rs.waitLock(requestURL)
+
+			if isGetUnlock {
+				log.Printf("get unlock for %s", requestURL)
+				continue
+			}
+		}
+
+		// make HTTP request
+		log.Printf("make HTTP request for %s", requestURL)
+		response := Response{}
+		body, err := rs.makeRequest(requestURL)
+		if err != nil {
+			response.Body = err.Error()
+			response.IsError = true
+		} else {
+			response.Body = body
+		}
+
+		// send response to channel
+		if !response.IsError {
+			responses <- response.Body
+		}
+
+		if isTakeLock {
+			// set response to cache
+			if err := rs.cacheSvc.SetResponse(requestURL, response, rs.getRandomExpiration()); err != nil {
+				log.Printf("couldn't set response to cache for %s: %v", requestURL, err)
+			}
+
+			// delete lock
+			if err := rs.cacheSvc.Unlock(requestURL, lockValue); err != nil {
+				log.Printf("couldn't delete lock for %s: %v", requestURL, err)
+			}
+		}
 	}
-
-	if err := rs.cacheSvc.SetInProgress(requestURL, requestTimeout); err != nil {
-		log.Printf("couldn't set in progress for %s: %v", requestURL, err)
-	}
-
-	log.Printf("set in progress for %s", requestURL)
-
-	response := Response{}
-	body, err := rs.makeRequest(requestURL)
-	if err != nil {
-		response.Body = err.Error()
-		response.IsError = true
-	} else {
-		response.Body = body
-	}
-
-	if err := rs.cacheSvc.SetResponse(requestURL, response, time.Duration(rs.getRandomExpiration())*time.Second); err != nil {
-		log.Printf("couldn't set response to cache for %s: %v", requestURL, err)
-	}
-
-	log.Printf("set response for %s", requestURL)
-
-	if err := rs.cacheSvc.UnsetInProgress(requestURL); err != nil {
-		log.Printf("couldn't unset in progress for %s: %v", requestURL, err)
-	}
-
-	log.Printf("unset in progress for %s", requestURL)
-
-	responses <- response.Body
 }
 
-func (rs *RequestService) waitInProgress(requestURL string) {
-	isInProgress, err := rs.cacheSvc.IsInProgress(requestURL)
-	if err != nil {
-		log.Printf("couldn't get in progress status for %s: %v", requestURL, err)
-	}
-
-	log.Printf("for %s progress is: %t", requestURL, isInProgress)
-
-	if !isInProgress {
-		return
-	}
-
+// true - no lock
+// false - don't wait until unlock
+func (rs *RequestService) waitLock(requestURL string) bool {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -131,15 +145,15 @@ func (rs *RequestService) waitInProgress(requestURL string) {
 	for {
 		select {
 		case <-done:
-			return
+			return false
 		case <-ticker.C:
-			isInProgress, err := rs.cacheSvc.IsInProgress(requestURL)
+			isLock, err := rs.cacheSvc.IsLock(requestURL)
 			if err != nil {
 				log.Printf("couldn't get in progress status for %s: %v", requestURL, err)
 			}
 
-			if !isInProgress {
-				return
+			if !isLock {
+				return true
 			}
 		}
 	}
@@ -169,10 +183,22 @@ func (rs *RequestService) makeRequest(requestURL string) (string, error) {
 	return string(body), nil
 }
 
-func (rs *RequestService) getRandomExpiration() int {
+func (rs *RequestService) getRandomLockValue() (string, error) {
+	rand.Seed(time.Now().UnixNano())
+	b := make([]byte, 16)
+
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(b), nil
+}
+
+func (rs *RequestService) getRandomExpiration() time.Duration {
 	rand.Seed(time.Now().UnixNano())
 
-	return rand.Intn(rs.config.MaxTimeout-rs.config.MinTimeout+1) + rs.config.MinTimeout
+	return time.Duration(rand.Intn(rs.config.MaxTimeout-rs.config.MinTimeout+1)+rs.config.MinTimeout) * time.Second
 }
 
 func (rs *RequestService) getRandomURL() string {
